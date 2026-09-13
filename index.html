@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+=<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -266,8 +266,8 @@
   <input type="text" id="nickname-input" maxlength="16" placeholder="ИГРОК" autocomplete="off">
   <div class="modes">
     <div class="mode-btn selected" data-mode="campaign">КАМПАНИЯ<small>3 уровня · история</small></div>
-    <div class="mode-btn" data-mode="endless">БЕСКОНЕЧНЫЙ<small>волны монстров · боссы каждые 10</small></div>
-    <div class="mode-btn" data-mode="online">ОНЛАЙН<small>играть с другом по коду</small></div>
+    <div class="mode-btn" data-mode="endless">БЕСКОНЕЧНЫЙ<small>волны · боссы каждые 10</small></div>
+    <div class="mode-btn" data-mode="online">ОНЛАЙН<small>играть с другом</small></div>
   </div>
 
   <div id="online-panel">
@@ -323,6 +323,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
+'use strict';
+
 // ==================== ЗВУКИ ====================
 let audioCtx = null;
 function initAudio() {
@@ -331,8 +333,9 @@ function initAudio() {
   }
   if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
-function playTone(freq, duration, type='sine', vol=0.2, attack=0.005) {
+function playTone(freq, duration, type, vol, attack) {
   if(!audioCtx) return;
+  type = type || 'sine'; vol = vol || 0.2; attack = attack || 0.005;
   const t = audioCtx.currentTime;
   const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
   osc.type = type; osc.frequency.value = freq;
@@ -342,8 +345,9 @@ function playTone(freq, duration, type='sine', vol=0.2, attack=0.005) {
   osc.connect(gain); gain.connect(audioCtx.destination);
   osc.start(t); osc.stop(t + duration);
 }
-function playNoise(duration, vol=0.3, filterFreq=1000, filterType='lowpass') {
+function playNoise(duration, vol, filterFreq, filterType) {
   if(!audioCtx) return;
+  vol = vol || 0.3; filterFreq = filterFreq || 1000; filterType = filterType || 'lowpass';
   const t = audioCtx.currentTime;
   const bufSize = Math.floor(audioCtx.sampleRate * duration);
   const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
@@ -497,7 +501,7 @@ function soundRandomAmbient() {
     g.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
     src.connect(f); f.connect(g); g.connect(audioCtx.destination);
     src.start(t); src.stop(t + 1.5);
-  } else if(roll < 0.9) {
+  } else {
     const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
     o.type = 'sawtooth';
     o.frequency.setValueAtTime(60 + Math.random()*40, t);
@@ -506,8 +510,6 @@ function soundRandomAmbient() {
     g.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
     o.connect(g); g.connect(audioCtx.destination);
     o.start(t); o.stop(t + 1.8);
-  } else {
-    for(let i=0; i<4; i++) setTimeout(() => playTone(1200 + Math.random()*600, 0.08, 'sine', 0.1), i * 250 + Math.random()*200);
   }
 }
 function soundMonsterRoar() {
@@ -574,25 +576,25 @@ const postScene = new THREE.Scene();
 const postCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
 const postMat = new THREE.ShaderMaterial({
   uniforms: { tDiffuse: { value: rt.texture } },
-  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
-  fragmentShader: `
-    uniform sampler2D tDiffuse; varying vec2 vUv;
-    float bayer(vec2 p){
-      int x = int(mod(p.x, 4.0)); int y = int(mod(p.y, 4.0));
-      float m[16];
-      m[0]=0.0;m[1]=8.0;m[2]=2.0;m[3]=10.0; m[4]=12.0;m[5]=4.0;m[6]=14.0;m[7]=6.0;
-      m[8]=3.0;m[9]=11.0;m[10]=1.0;m[11]=9.0; m[12]=15.0;m[13]=7.0;m[14]=13.0;m[15]=5.0;
-      int idx = y*4 + x; for(int i=0;i<16;i++){ if(i==idx) return m[i]/16.0; } return 0.0;
-    }
-    void main(){
-      vec3 col = texture2D(tDiffuse, vUv).rgb;
-      vec2 px = vUv * vec2(640.0, 480.0);
-      float d = bayer(px);
-      col = floor(col * 32.0 + d) / 32.0;
-      col *= 0.94 + 0.06 * step(0.5, fract(px.y));
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }',
+  fragmentShader: [
+    'uniform sampler2D tDiffuse; varying vec2 vUv;',
+    'float bayer(vec2 p){',
+    '  int x = int(mod(p.x, 4.0)); int y = int(mod(p.y, 4.0));',
+    '  float m[16];',
+    '  m[0]=0.0;m[1]=8.0;m[2]=2.0;m[3]=10.0; m[4]=12.0;m[5]=4.0;m[6]=14.0;m[7]=6.0;',
+    '  m[8]=3.0;m[9]=11.0;m[10]=1.0;m[11]=9.0; m[12]=15.0;m[13]=7.0;m[14]=13.0;m[15]=5.0;',
+    '  int idx = y*4 + x; for(int i=0;i<16;i++){ if(i==idx) return m[i]/16.0; } return 0.0;',
+    '}',
+    'void main(){',
+    '  vec3 col = texture2D(tDiffuse, vUv).rgb;',
+    '  vec2 px = vUv * vec2(640.0, 480.0);',
+    '  float d = bayer(px);',
+    '  col = floor(col * 32.0 + d) / 32.0;',
+    '  col *= 0.94 + 0.06 * step(0.5, fract(px.y));',
+    '  gl_FragColor = vec4(col, 1.0);',
+    '}'
+  ].join('\n')
 });
 postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), postMat));
 window.addEventListener('resize', () => { renderer.setSize(window.innerWidth, window.innerHeight); });
@@ -767,7 +769,7 @@ function generateRoomLevel(levelIdx) {
   const shuffled = doorCells.slice();
   for(let i=shuffled.length-1; i>0; i--) {
     const j = Math.floor(Math.random()*(i+1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    const temp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = temp;
   }
   for(const d of shuffled) {
     const isStartDoor = (d.rx === 0 && d.ry === 0);
@@ -800,7 +802,7 @@ function generateRoomLevel(levelIdx) {
     }
     for(let i=candidates.length-1; i>0; i--) {
       const j = Math.floor(Math.random()*(i+1));
-      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+      const temp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = temp;
     }
     const used = [];
     for(const c of candidates) {
@@ -815,7 +817,7 @@ function generateRoomLevel(levelIdx) {
       used.push(c);
     }
   }
-  return { grid, lowPassageCells };
+  return { grid: grid, lowPassageCells: lowPassageCells };
 }
 
 function generateArena() {
@@ -838,7 +840,7 @@ function generateArena() {
       for(let xx=cx; xx<cx+w && xx<SIZE-1; xx++)
         grid[yy][xx] = '#';
   }
-  return { grid, lowPassageCells: [] };
+  return { grid: grid, lowPassageCells: [] };
 }
 
 // ==================== LEVEL STATE ====================
@@ -848,7 +850,6 @@ let MAP_W = 0, MAP_H = 0;
 const CELL = 3;
 let gameMode = 'campaign';
 
-// === ОНЛАЙН ===
 let peer = null;
 let conn = null;
 let isHost = false;
@@ -893,7 +894,8 @@ function gridToWorld(gx, gz) { return { x: gx * CELL, z: gz * CELL }; }
 function worldToGrid(wx, wz) { return { gx: Math.round(wx / CELL), gz: Math.round(wz / CELL) }; }
 
 function isWallAt(wx, wz, crouching) {
-  const { gx, gz } = worldToGrid(wx, wz);
+  const g = worldToGrid(wx, wz);
+  const gx = g.gx, gz = g.gz;
   if(gz < 0 || gz >= MAP_H || gx < 0 || gx >= MAP_W) return true;
   const c = MAP[gz][gx];
   if(c === '#') return true;
@@ -909,9 +911,21 @@ function canStandAt(wx, wz, r, crouching) {
   return true;
 }
 function isInLowPassage(wx, wz) {
-  const { gx, gz } = worldToGrid(wx, wz);
+  const g = worldToGrid(wx, wz);
+  const gx = g.gx, gz = g.gz;
   if(gz < 0 || gz >= MAP_H || gx < 0 || gx >= MAP_W) return false;
   return MAP[gz][gx] === 'L';
+}
+// === ФИКС: проверка прямой видимости от точки A к точке B ===
+function hasLineOfSight(x1, z1, x2, z2) {
+  const steps = 12;
+  for(let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const px = x1 + (x2 - x1) * t;
+    const pz = z1 + (z2 - z1) * t;
+    if(isWallAt(px, pz, false)) return false;
+  }
+  return true;
 }
 
 const WALKABLE_CELLS = [];
@@ -951,12 +965,12 @@ function buildLevel() {
   const walkables = [];
   for(let gz=0; gz<MAP_H; gz++)
     for(let gx=0; gx<MAP_W; gx++)
-      if(MAP[gz][gx] !== '#') walkables.push({gx, gz});
+      if(MAP[gz][gx] !== '#') walkables.push({gx: gx, gz: gz});
 
   if(gameMode === 'endless' || (onlineActive && onlineMode === 'endless')) {
     startGrid = {gx: Math.floor(MAP_W/2), gz: Math.floor(MAP_H/2)};
   } else {
-    startGrid = {gx: 0 * 6 + 1 + 2, gz: 0 * 6 + 1 + 2};
+    startGrid = {gx: 3, gz: 3};
   }
 
   let exitCell = walkables[0];
@@ -984,13 +998,13 @@ function buildLevel() {
         const block = new THREE.Mesh(lowBlockGeo, wallMat);
         block.position.set(p.x, CELL - lowBlockHeight/2, p.z);
         world.add(block);
-        WALKABLE_CELLS.push({gx, gz});
+        WALKABLE_CELLS.push({gx: gx, gz: gz});
       } else {
         const floor = new THREE.Mesh(floorGeo, floorMat);
         floor.rotation.x = -Math.PI/2; floor.position.set(p.x, 0, p.z); world.add(floor);
         const ceil = new THREE.Mesh(floorGeo, ceilMat);
         ceil.rotation.x = Math.PI/2; ceil.position.set(p.x, CELL, p.z); world.add(ceil);
-        WALKABLE_CELLS.push({gx, gz});
+        WALKABLE_CELLS.push({gx: gx, gz: gz});
       }
     }
   }
@@ -1018,8 +1032,8 @@ function buildLevel() {
       let bestKeyDist = -1;
       for(const c of walkables) {
         if(MAP[c.gz][c.gx] === 'L') continue;
-        const dStart = (c.gx-startGrid.gx)**2 + (c.gz-startGrid.gz)**2;
-        const dExit = (c.gx-exitCell.gx)**2 + (c.gz-exitCell.gz)**2;
+        const dStart = (c.gx-startGrid.gx)*(c.gx-startGrid.gx) + (c.gz-startGrid.gz)*(c.gz-startGrid.gz);
+        const dExit = (c.gx-exitCell.gx)*(c.gx-exitCell.gx) + (c.gz-exitCell.gz)*(c.gz-exitCell.gz);
         const score = Math.min(dStart, dExit);
         if(score > bestKeyDist && !(c.gx===startGrid.gx && c.gz===startGrid.gz) && !(c.gx===exitCell.gx && c.gz===exitCell.gz)) {
           bestKeyDist = score; keyCell = c;
@@ -1035,12 +1049,12 @@ function buildLevel() {
 
     if(currentLevel === 2) {
       const roomPositions = [];
-      const RX = 3, RY = 3, BLOCK = 6;
+      const RXl = 3, RYl = 3, BLOCKl = 6;
       const cornerRooms = [
-        {rx: RX-1, ry: 0}, {rx: 0, ry: RY-1}, {rx: RX-1, ry: RY-1}, {rx: 1, ry: 1}
+        {rx: RXl-1, ry: 0}, {rx: 0, ry: RYl-1}, {rx: RXl-1, ry: RYl-1}, {rx: 1, ry: 1}
       ];
       for(const rp of cornerRooms) {
-        const cell = {gx: rp.rx * BLOCK + 1 + 2, gz: rp.ry * BLOCK + 1 + 2};
+        const cell = {gx: rp.rx * BLOCKl + 1 + 2, gz: rp.ry * BLOCKl + 1 + 2};
         if(MAP[cell.gz] && MAP[cell.gz][cell.gx] && MAP[cell.gz][cell.gx] !== '#') roomPositions.push(cell);
       }
       if(roomPositions.length < LEVERS_NEEDED) {
@@ -1089,7 +1103,7 @@ function buildLevel() {
         if(offset === 0) leverGroup.position.set(p.x, 0, p.z);
         leverGroup.rotation.y = rotY;
         world.add(leverGroup);
-        levers.push({ group: leverGroup, handlePivot, pulled: false, pos: leverGroup.position.clone(), cell });
+        levers.push({ group: leverGroup, handlePivot: handlePivot, pulled: false, pos: leverGroup.position.clone(), cell: cell });
       }
     }
   }
@@ -1107,67 +1121,47 @@ function buildLevel() {
   for(let i=0; i<initialMonsterCount; i++) spawnMonster();
 }
 
-// ==================== ДЕТАЛИЗИРОВАННЫЕ МОНСТРЫ ====================
+// ==================== МОНСТРЫ ====================
 function makeCrawlerMesh() {
   const g = new THREE.Group();
   const bodyMat = new THREE.MeshLambertMaterial({ color: 0x8b1a1a });
   const darkMat = new THREE.MeshLambertMaterial({ color: 0x5a0808 });
   const boneMat = new THREE.MeshLambertMaterial({ color: 0xd8c8a0 });
   const toothMat = new THREE.MeshLambertMaterial({ color: 0xf0e8c8 });
-  // Тело
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.7), bodyMat);
-  body.position.y = 0.85; g.add(body);
-  // Грудь
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.35, 0.3), new THREE.MeshLambertMaterial({color:0xa02020}));
-  chest.position.set(0, 1.0, 0.32); g.add(chest);
-  // Живот
-  const belly = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.4, 0.6), darkMat);
-  belly.position.set(0, 0.55, 0); g.add(belly);
-  // Голова
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.55), new THREE.MeshLambertMaterial({color:0xa03020}));
-  head.position.y = 1.4; g.add(head);
-  // Морда
-  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.3), new THREE.MeshLambertMaterial({color:0x901c14}));
-  snout.position.set(0, 1.32, 0.4); g.add(snout);
-  // Рога
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.7), bodyMat); body.position.y = 0.85; g.add(body);
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.35, 0.3), new THREE.MeshLambertMaterial({color:0xa02020})); chest.position.set(0, 1.0, 0.32); g.add(chest);
+  const belly = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.4, 0.6), darkMat); belly.position.set(0, 0.55, 0); g.add(belly);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.55), new THREE.MeshLambertMaterial({color:0xa03020})); head.position.y = 1.4; g.add(head);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.3), new THREE.MeshLambertMaterial({color:0x901c14})); snout.position.set(0, 1.32, 0.4); g.add(snout);
   const hornGeo = new THREE.ConeGeometry(0.06, 0.3, 5);
   const hL = new THREE.Mesh(hornGeo, boneMat); hL.position.set(-0.2, 1.75, 0); hL.rotation.z = 0.5; g.add(hL);
   const hR = new THREE.Mesh(hornGeo, boneMat); hR.position.set(0.2, 1.75, 0); hR.rotation.z = -0.5; g.add(hR);
-  // Глаза
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffee00 });
   const eyeGeo = new THREE.BoxGeometry(0.14, 0.1, 0.06);
-  const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(-0.13, 1.47, 0.28); eL.rotation.z = 0.3; g.add(eL);
-  const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set(0.13, 1.47, 0.28); eR.rotation.z = -0.3; g.add(eR);
-  // Рот
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.05), new THREE.MeshBasicMaterial({color:0x220000}));
-  mouth.position.set(0, 1.22, 0.47); g.add(mouth);
-  // Зубы
+  const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(-0.13, 1.47, 0.28); g.add(eL);
+  const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set(0.13, 1.47, 0.28); g.add(eR);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.05), new THREE.MeshBasicMaterial({color:0x220000})); mouth.position.set(0, 1.22, 0.47); g.add(mouth);
   const toothGeo = new THREE.ConeGeometry(0.025, 0.07, 4);
   for(let i=0;i<4;i++){
     const t = new THREE.Mesh(toothGeo, toothMat); t.position.set(-0.11 + i*0.07, 1.26, 0.47); t.rotation.x=Math.PI; g.add(t);
     const t2 = new THREE.Mesh(toothGeo, toothMat); t2.position.set(-0.11 + i*0.07, 1.18, 0.47); g.add(t2);
   }
-  // Руки
   const armMat = new THREE.MeshLambertMaterial({ color: 0x6b1010 });
   const armGeo = new THREE.BoxGeometry(0.22, 1.3, 0.22);
   const aL = new THREE.Mesh(armGeo, armMat); aL.position.set(-0.55, 0.65, 0.1); aL.rotation.x = -0.15; g.add(aL);
   const aR = new THREE.Mesh(armGeo, armMat); aR.position.set(0.55, 0.65, 0.1); aR.rotation.x = -0.15; g.add(aR);
-  // Когти
   const clawGeo = new THREE.ConeGeometry(0.04, 0.22, 4);
   for(let i=0;i<3;i++){
     const c = new THREE.Mesh(clawGeo, boneMat); c.position.set(-0.55, 0.05, 0.15 + i*0.05 - 0.05); c.rotation.x = Math.PI; g.add(c);
     const c2 = new THREE.Mesh(clawGeo, boneMat); c2.position.set(0.55, 0.05, 0.15 + i*0.05 - 0.05); c2.rotation.x = Math.PI; g.add(c2);
   }
-  // Плечи-шипы
   const spikeGeo = new THREE.ConeGeometry(0.05, 0.18, 4);
   const sL = new THREE.Mesh(spikeGeo, boneMat); sL.position.set(-0.4, 1.15, 0); sL.rotation.z = 0.8; g.add(sL);
   const sR = new THREE.Mesh(spikeGeo, boneMat); sR.position.set(0.4, 1.15, 0); sR.rotation.z = -0.8; g.add(sR);
-  // Ноги
   const legMat = new THREE.MeshLambertMaterial({ color: 0x4a0808 });
   const legGeo = new THREE.BoxGeometry(0.28, 0.6, 0.35);
   const lL = new THREE.Mesh(legGeo, legMat); lL.position.set(-0.24, 0.3, 0); g.add(lL);
   const lR = new THREE.Mesh(legGeo, legMat); lR.position.set(0.24, 0.3, 0); g.add(lR);
-  // Копыта
   const hoofMat = new THREE.MeshLambertMaterial({ color: 0x1a0505 });
   const hoofGeo = new THREE.BoxGeometry(0.32, 0.12, 0.42);
   const hL2 = new THREE.Mesh(hoofGeo, hoofMat); hL2.position.set(-0.24, 0.05, 0.05); g.add(hL2);
@@ -1184,57 +1178,41 @@ function makeHowlerMesh() {
   const hornMat = new THREE.MeshLambertMaterial({ color: 0x9050c0 });
   const clawMat = new THREE.MeshLambertMaterial({ color: 0x8060d0 });
   const toothMat = new THREE.MeshLambertMaterial({ color: 0x80c0ff });
-  // Тело
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.3, 0.9), bodyMat); body.position.y = 1.3; g.add(body);
-  // Грудь
   const chest = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.55, 0.35), new THREE.MeshLambertMaterial({color:0x3a2050})); chest.position.set(0, 1.5, 0.42); g.add(chest);
-  // Живот
   const belly = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.55, 0.65), darkSkin); belly.position.set(0, 0.8, 0); g.add(belly);
-  // Голова
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.7, 0.7), skinMat); head.position.y = 2.35; g.add(head);
-  // Морда
   const snout = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.35, 0.4), new THREE.MeshLambertMaterial({color:0x6a3a90})); snout.position.set(0, 2.22, 0.5); g.add(snout);
-  // Рога
   const hornGeo = new THREE.ConeGeometry(0.13, 0.75, 5);
   const hL = new THREE.Mesh(hornGeo, hornMat); hL.position.set(-0.35, 2.95, 0); hL.rotation.z = 0.5; hL.rotation.x = -0.2; g.add(hL);
   const hR = new THREE.Mesh(hornGeo, hornMat); hR.position.set(0.35, 2.95, 0); hR.rotation.z = -0.5; hR.rotation.x = -0.2; g.add(hR);
-  // Глаза
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
   const eyeGeo = new THREE.BoxGeometry(0.2, 0.15, 0.08);
   const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(-0.19, 2.48, 0.36); g.add(eL);
   const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set(0.19, 2.48, 0.36); g.add(eR);
-  // Рот
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.06), new THREE.MeshBasicMaterial({color:0x100020}));
-  mouth.position.set(0, 2.1, 0.62); g.add(mouth);
-  // Клыки
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.06), new THREE.MeshBasicMaterial({color:0x100020})); mouth.position.set(0, 2.1, 0.62); g.add(mouth);
   const toothGeo = new THREE.ConeGeometry(0.035, 0.1, 4);
   for(let i=0;i<5;i++){
     const t = new THREE.Mesh(toothGeo, toothMat); t.position.set(-0.16 + i*0.08, 2.15, 0.62); t.rotation.x=Math.PI; g.add(t);
     const t2 = new THREE.Mesh(toothGeo, toothMat); t2.position.set(-0.16 + i*0.08, 2.05, 0.62); g.add(t2);
   }
-  // Плечи
   const shoulderMat = new THREE.MeshLambertMaterial({ color: 0x5028a0 });
   const sL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.55), shoulderMat); sL.position.set(-0.85, 1.75, 0); g.add(sL);
   const sR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.55), shoulderMat); sR.position.set(0.85, 1.75, 0); g.add(sR);
-  // Шипы на плечах
   const spikeGeo = new THREE.ConeGeometry(0.08, 0.25, 4);
   const spL = new THREE.Mesh(spikeGeo, hornMat); spL.position.set(-0.85, 2.0, 0); spL.rotation.z = 0.3; g.add(spL);
   const spR = new THREE.Mesh(spikeGeo, hornMat); spR.position.set(0.85, 2.0, 0); spR.rotation.z = -0.3; g.add(spR);
-  // Руки
   const armGeo = new THREE.BoxGeometry(0.35, 1.2, 0.35);
   const aL = new THREE.Mesh(armGeo, bodyMat); aL.position.set(-0.85, 1.0, 0.15); aL.rotation.x = -0.2; g.add(aL);
   const aR = new THREE.Mesh(armGeo, bodyMat); aR.position.set(0.85, 1.0, 0.15); aR.rotation.x = -0.2; g.add(aR);
-  // Когти
   const clawGeo = new THREE.ConeGeometry(0.05, 0.25, 4);
   for(let i=0;i<3;i++){
     const c = new THREE.Mesh(clawGeo, clawMat); c.position.set(-0.85, 0.36, 0.2 + i*0.05 - 0.05); c.rotation.x = Math.PI; g.add(c);
     const c2 = new THREE.Mesh(clawGeo, clawMat); c2.position.set(0.85, 0.36, 0.2 + i*0.05 - 0.05); c2.rotation.x = Math.PI; g.add(c2);
   }
-  // Ноги
   const legGeo = new THREE.BoxGeometry(0.4, 1.0, 0.45);
   const lL = new THREE.Mesh(legGeo, darkSkin); lL.position.set(-0.32, 0.5, 0); g.add(lL);
   const lR = new THREE.Mesh(legGeo, darkSkin); lR.position.set(0.32, 0.5, 0); g.add(lR);
-  // Копыта
   const hoofMat = new THREE.MeshLambertMaterial({ color: 0x100020 });
   const hoofGeo = new THREE.BoxGeometry(0.45, 0.18, 0.55);
   const hL2 = new THREE.Mesh(hoofGeo, hoofMat); hL2.position.set(-0.32, 0.09, 0.05); g.add(hL2);
@@ -1279,8 +1257,7 @@ function makePaleMesh() {
   const eyeGeo = new THREE.BoxGeometry(0.12, 0.12, 0.05);
   const eL = new THREE.Mesh(eyeGeo, eyeSocket); eL.position.set(-0.13, 2.15, 0.28); g.add(eL);
   const eR = new THREE.Mesh(eyeGeo, eyeSocket); eR.position.set(0.13, 2.15, 0.28); g.add(eR);
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 0.06), new THREE.MeshBasicMaterial({ color: 0x200000 }));
-  mouth.position.set(0, 1.95, 0.31); g.add(mouth);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 0.06), new THREE.MeshBasicMaterial({ color: 0x200000 })); mouth.position.set(0, 1.95, 0.31); g.add(mouth);
   const toothMat = new THREE.MeshLambertMaterial({ color: 0xf0e8c8 });
   const toothGeo = new THREE.ConeGeometry(0.025, 0.08, 4);
   for(let i=0;i<4;i++){
@@ -1317,8 +1294,7 @@ function makeBossMesh() {
   const eyeGeo = new THREE.BoxGeometry(0.3, 0.2, 0.1);
   const eL = new THREE.Mesh(eyeGeo, eyeMat); eL.position.set(-0.4, 4.6, 0.66); g.add(eL);
   const eR = new THREE.Mesh(eyeGeo, eyeMat); eR.position.set(0.4, 4.6, 0.66); g.add(eR);
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.1), new THREE.MeshBasicMaterial({ color: 0x200000 }));
-  mouth.position.set(0, 4.1, 0.66); g.add(mouth);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.1), new THREE.MeshBasicMaterial({ color: 0x200000 })); mouth.position.set(0, 4.1, 0.66); g.add(mouth);
   const toothMat = new THREE.MeshLambertMaterial({ color: 0xf0e8c8 });
   const toothGeo = new THREE.ConeGeometry(0.07, 0.2, 4);
   for(let i=0;i<7;i++){
@@ -1350,7 +1326,7 @@ function makeBossMesh() {
 const monsters = [];
 let kills = 0;
 
-// === ВАЖНО: Howler HP = 2 (было 5) ===
+// === Howler HP = 2 ===
 const MONSTER_TYPES = {
   crawler: { build: makeCrawlerMesh, hp: 2, speed: 2.3, damage: 1, attackRange: 1.0, attackCooldown: 0.9 },
   howler:  { build: makeHowlerMesh,  hp: 2, speed: 1.6, damage: 1, attackRange: 1.3, attackCooldown: 1.1 },
@@ -1365,17 +1341,22 @@ function currentMonsterType() {
   return Math.random() < 0.5 ? 'howler' : 'pale';
 }
 
+// === ФИКС: спавн только в валидных клетках + не рядом с игроком ===
 function spawnMonster() {
   const typeKey = currentMonsterType();
   const type = MONSTER_TYPES[typeKey];
   for(let tries=0; tries<100; tries++) {
     const c = WALKABLE_CELLS[(Math.random()*WALKABLE_CELLS.length)|0];
+    if(!c) continue;
     if(MAP[c.gz][c.gx] === 'L') continue;
     const p = gridToWorld(c.gx, c.gz);
+    // Не спавним рядом с выходом
     if(exitDoor && Math.abs(p.x - exitPos.x) < CELL*2 && Math.abs(p.z - exitPos.z) < CELL*2) continue;
+    // Не спавним рядом со стартом
     const sp = gridToWorld(startGrid.gx, startGrid.gz);
     const dsx = p.x - sp.x, dsz = p.z - sp.z;
     if(dsx*dsx + dsz*dsz < 100) continue;
+    // Не спавним слишком близко к игроку
     const dx = p.x - player.pos.x, dz = p.z - player.pos.z;
     if(dx*dx + dz*dz > 100) {
       const m = type.build();
@@ -1396,6 +1377,7 @@ function spawnBoss() {
   const type = MONSTER_TYPES.boss;
   for(let tries=0; tries<100; tries++) {
     const c = WALKABLE_CELLS[(Math.random()*WALKABLE_CELLS.length)|0];
+    if(!c) continue;
     if(MAP[c.gz][c.gx] === 'L') continue;
     const p = gridToWorld(c.gx, c.gz);
     const dx = p.x - player.pos.x, dz = p.z - player.pos.z;
@@ -1419,6 +1401,7 @@ function spawnBoss() {
 function spawnImmortalMonster() {
   for(let tries=0; tries<200; tries++) {
     const c = WALKABLE_CELLS[(Math.random()*WALKABLE_CELLS.length)|0];
+    if(!c) continue;
     if(MAP[c.gz][c.gx] === 'L') continue;
     const p = gridToWorld(c.gx, c.gz);
     const dx = p.x - player.pos.x, dz = p.z - player.pos.z;
@@ -1479,10 +1462,10 @@ function resetPlayerForLevel() {
   player.reloading = false;
   player.reloadAnim = 0;
   const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
-  for(const [dx, dz] of dirs) {
-    const gx = startGrid.gx + dx, gz = startGrid.gz + dz;
+  for(const d of dirs) {
+    const gx = startGrid.gx + d[0], gz = startGrid.gz + d[1];
     if(MAP[gz] && MAP[gz][gx] && MAP[gz][gx] !== '#') {
-      player.yaw = Math.atan2(-dx, -dz);
+      player.yaw = Math.atan2(-d[0], -d[1]);
       break;
     }
   }
@@ -1671,7 +1654,7 @@ function handleOnlineData(data) {
       const mesh = makeRemotePlayerMesh();
       scene.add(mesh);
       remotePlayers['remote'] = {
-        mesh, pos: new THREE.Vector3(0,0,0), yaw: 0,
+        mesh: mesh, pos: new THREE.Vector3(0,0,0), yaw: 0,
         nickname: data.nickname || 'ИГРОК', lastUpdate: Date.now()
       };
     }
@@ -1681,7 +1664,7 @@ function handleOnlineData(data) {
       const mesh = makeRemotePlayerMesh();
       scene.add(mesh);
       remotePlayers['remote'] = {
-        mesh, pos: new THREE.Vector3(0,0,0), yaw: 0,
+        mesh: mesh, pos: new THREE.Vector3(0,0,0), yaw: 0,
         nickname: data.nickname || 'ИГРОК', lastUpdate: Date.now()
       };
     }
@@ -1815,7 +1798,9 @@ function tryShoot() {
   camera.getWorldDirection(dir);
   for(let i=0; i<10; i++) {
     const spread = new THREE.Vector3(
-      (Math.random()-0.5) * 0.22, (Math.random()-0.5) * 0.22, (Math.random()-0.5) * 0.22
+      (Math.random()-0.5) * 0.22,
+      (Math.random()-0.5) * 0.22,
+      (Math.random()-0.5) * 0.22
     );
     const d = dir.clone().add(spread).normalize();
     raycaster.set(origin, d); raycaster.far = 40;
@@ -1823,7 +1808,7 @@ function tryShoot() {
     for(const m of monsters) {
       if(!m.alive) continue;
       const h = raycaster.intersectObject(m.mesh, true);
-      if(h.length > 0) hitList.push({ m, dist: h[0].distance });
+      if(h.length > 0) hitList.push({ m: m, dist: h[0].distance });
     }
     hitList.sort((a,b) => a.dist - b.dist);
     if(hitList.length > 0) {
@@ -1835,13 +1820,18 @@ function tryShoot() {
         const kb = new THREE.Vector3().subVectors(target.mesh.position, player.pos).normalize();
         target.mesh.position.addScaledVector(kb, 0.08);
         if(!target.hasSeenPlayer) {
-          target.hasSeenPlayer = true; target.alertState = 'alert'; target.alertTimer = 0.5; soundAlert();
+          target.hasSeenPlayer = true;
+          target.alertState = 'alert';
+          target.alertTimer = 0.5;
+          soundAlert();
         }
         if(target.hp <= 0 && target.alive) {
           target.alive = false;
           target.mesh.rotation.x = -Math.PI/2;
           target.mesh.position.y = target.isBoss ? 1.0 : 0.35;
-          kills++; updateHUD(); soundMonsterDeath();
+          kills++;
+          updateHUD();
+          soundMonsterDeath();
           setTimeout(() => { if(target.mesh.parent) world.remove(target.mesh); }, 2000);
         }
       }
@@ -1862,8 +1852,10 @@ function updateReloadAnim(dt) {
   if(!player.reloading) return;
   player.reloadAnim += dt / reloadDuration;
   if(player.reloadAnim >= 1) {
-    player.reloadAnim = 0; player.ammo = player.maxAmmo;
-    player.reloading = false; reloadWasActive = true;
+    player.reloadAnim = 0;
+    player.ammo = player.maxAmmo;
+    player.reloading = false;
+    reloadWasActive = true;
     updateHUD(); showMsg(''); soundReloadEnd(); return;
   }
   const t = player.reloadAnim;
@@ -1895,9 +1887,9 @@ function closeNote() {
 }
 noteEl.addEventListener('click', closeNote);
 const LEVEL_NOTES = [
-  { title: "ЗАПИСКА · УРОВЕНЬ 1", body: `Образец №013 — «Ползун» (CRAWLER)\n\nБыстрый, но хрупкий.\n\nДверь уже открыта. Найди её и зайди внутрь.\n\nУ тебя 3 души.` },
-  { title: "ЗАПИСКА · УРОВЕНЬ 2", body: `Образец №047 — «Ревун» (HOWLER)\n\nФиолетовая кожа, светящиеся глаза. Два выстрела — и он развалится.\n\nВНИМАНИЕ! Есть НИЗКИЕ ПРОХОДЫ. Через них нельзя пройти стоя — только проползти (CTRL).\n\nДверь заперта ЗОЛОТЫМ КЛЮЧОМ.` },
-  { title: "ЗАПИСКА · УРОВЕНЬ 3", body: `ОБЪЕКТ №███ — «ОНО» (THE EYE)\n\nТонкая чёрная фигура с одним белым глазом. Убить невозможно.\n\nНайди 4 РЫЧАГА в комнатах и дёрни их (E). Затем — дверь.\n\nСектор во мраке. Нажми F — фонарь.` }
+  { title: "ЗАПИСКА · УРОВЕНЬ 1", body: "Образец №013 — «Ползун» (CRAWLER)\n\nБыстрый, но хрупкий.\n\nДверь уже открыта. Найди её и зайди внутрь.\n\nУ тебя 3 души." },
+  { title: "ЗАПИСКА · УРОВЕНЬ 2", body: "Образец №047 — «Ревун» (HOWLER)\n\nФиолетовая кожа, светящиеся глаза. Два выстрела — и он развалится.\n\nВНИМАНИЕ! Есть НИЗКИЕ ПРОХОДЫ. Через них нельзя пройти стоя — только проползти (CTRL).\n\nДверь заперта ЗОЛОТЫМ КЛЮЧОМ." },
+  { title: "ЗАПИСКА · УРОВЕНЬ 3", body: "ОБЪЕКТ №███ — «ОНО» (THE EYE)\n\nТонкая чёрная фигура с одним белым глазом. Убить невозможно.\n\nНайди 4 РЫЧАГА в комнатах и дёрни их (E). Затем — дверь.\n\nСектор во мраке. Нажми F — фонарь." }
 ];
 
 // ==================== СКРИМЕР ====================
@@ -1983,7 +1975,11 @@ function updateWaveUI() {
 function showMsg(text) { msgEl.textContent = text; msgEl.style.opacity = text ? 1 : 0; }
 function showHint(text) { hintEl.textContent = text; hintEl.style.opacity = text ? 1 : 0; }
 let hintTimeout = null;
-function showHintTemp(text, duration=2500) { showHint(text); clearTimeout(hintTimeout); hintTimeout = setTimeout(() => showHint(''), duration); }
+function showHintTemp(text, duration) {
+  duration = duration || 2500;
+  showHint(text); clearTimeout(hintTimeout);
+  hintTimeout = setTimeout(() => showHint(''), duration);
+}
 function updateKeyIcon() { keyIconEl.classList.toggle('on', hasKey); }
 function flashDamage() {
   dmgFlash.style.background = 'rgba(255,0,0,0.5)';
@@ -2094,6 +2090,9 @@ let lastTime = performance.now();
 let monsterSpawnTimer = 0;
 let monsterGrowlTimer = 0;
 let randomAmbientTimer = 5;
+let started = false;
+let gameOver = false;
+let mouseDown = false;
 const MAX_MONSTERS = 8;
 
 function updateImmortalCrawl(m, dt) {
@@ -2104,8 +2103,8 @@ function updateImmortalCrawl(m, dt) {
     if(dirToPlayer.lengthSq() > 0.01) dirToPlayer.normalize();
     const probeX = m.mesh.position.x + dirToPlayer.x * CELL * 1.2;
     const probeZ = m.mesh.position.z + dirToPlayer.z * CELL * 1.2;
-    const { gx, gz } = worldToGrid(probeX, probeZ);
-    if(gz >= 0 && gz < MAP_H && gx >= 0 && gx < MAP_W && MAP[gz][gx] === 'L') {
+    const g = worldToGrid(probeX, probeZ);
+    if(g.gz >= 0 && g.gz < MAP_H && g.gx >= 0 && g.gx < MAP_W && MAP[g.gz][g.gx] === 'L') {
       m.crawlState = 'lying'; m.crawlTimer = 0;
       m.crawlStartPos.copy(m.mesh.position);
       m.crawlEndPos.set(m.mesh.position.x + dirToPlayer.x * CELL * 2.2, 0, m.mesh.position.z + dirToPlayer.z * CELL * 2.2);
@@ -2139,6 +2138,7 @@ function updateImmortalCrawl(m, dt) {
 function update(dt) {
   if(!started || gameOver || noteOpen) return;
 
+  // Волны
   if(gameMode === 'endless' || (onlineActive && onlineMode === 'endless')) {
     if(betweenWaves) {
       betweenWavesTimer -= dt;
@@ -2163,6 +2163,7 @@ function update(dt) {
     }
   }
 
+  // Случайные звуки
   if((currentLevel === 2 && gameMode === 'campaign') || gameMode === 'endless') {
     randomAmbientTimer -= dt;
     if(randomAmbientTimer <= 0) {
@@ -2171,6 +2172,7 @@ function update(dt) {
     }
   }
 
+  // Присед
   const inLow = isInLowPassage(player.pos.x, player.pos.z);
   if(inLow) player.forcedCrouch = true;
   else if(player.forcedCrouch) {
@@ -2185,6 +2187,7 @@ function update(dt) {
   player.targetEyeHeight = wantCrouch ? 0.55 : 1.55;
   player.eyeHeight += (player.targetEyeHeight - player.eyeHeight) * Math.min(1, dt*10);
 
+  // Движение
   const radius = wantCrouch ? PLAYER_RADIUS_CROUCH : PLAYER_RADIUS;
   const speed = wantCrouch ? 1.2 : ((keys['ShiftLeft'] || keys['ShiftRight']) ? 6.5 : 3.8);
   const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
@@ -2214,12 +2217,14 @@ function update(dt) {
   const sway = Math.cos(player.bob * 0.5) * 0.03;
   camera.position.set(player.pos.x, player.eyeHeight + bobOffset, player.pos.z);
   camera.rotation.order = 'YXZ';
-  camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
   pointLight.position.set(player.pos.x, 2.5, player.pos.z);
 
   gunGroup.position.copy(camera.position);
   gunGroup.rotation.copy(camera.rotation);
 
+  // Перезарядка
   if(player.reloading) updateReloadAnim(dt);
   else if(reloadWasActive) {
     reloadWasActive = false;
@@ -2227,10 +2232,10 @@ function update(dt) {
     shotgun.rotation.set(0, -0.03, 0);
     pump.position.z = pumpBaseZ;
   } else {
-    let gunLocalY = gunBasePos.y + Math.abs(Math.sin(player.bob * 0.5)) * 0.012;
-    let gunLocalZ = gunBasePos.z + gunKick;
-    let gunLocalX = gunBasePos.x + sway;
-    let gunRotX = -gunKick * 1.5;
+    const gunLocalY = gunBasePos.y + Math.abs(Math.sin(player.bob * 0.5)) * 0.012;
+    const gunLocalZ = gunBasePos.z + gunKick;
+    const gunLocalX = gunBasePos.x + sway;
+    const gunRotX = -gunKick * 1.5;
     shotgun.position.set(gunLocalX, gunLocalY, gunLocalZ);
     shotgun.rotation.set(gunRotX, -0.03, 0);
   }
@@ -2261,6 +2266,7 @@ function update(dt) {
   if(shootCooldown > 0) shootCooldown -= dt;
   if(mouseDown && shootCooldown <= 0 && !player.reloading && player.weaponMode === 'gun') tryShoot();
 
+  // Спавн монстров (кампания)
   if(gameMode === 'campaign' && !onlineActive) {
     if(currentLevel !== 2) {
       monsterSpawnTimer -= dt;
@@ -2274,10 +2280,7 @@ function update(dt) {
       monsterSpawnTimer -= dt;
       const aliveNormal = monsters.filter(m => m.alive && !m.immortal).length;
       if(monsterSpawnTimer <= 0 && aliveNormal < 3) {
-        const save = Math.random;
-        Math.random = () => 0.9;
         spawnMonster();
-        Math.random = save;
         monsterSpawnTimer = 6 + Math.random() * 4;
       }
     }
@@ -2294,6 +2297,7 @@ function update(dt) {
     if(hasMonsterNear && Math.random() < 0.5) soundMonsterGrowl();
   }
 
+  // Подсказки взаимодействия
   let showInteract = false;
   if(keyMesh && !hasKey) {
     const dx = player.pos.x - keyPos.x, dz = player.pos.z - keyPos.z;
@@ -2312,8 +2316,11 @@ function update(dt) {
   }
   interactEl.style.opacity = showInteract ? 1 : 0;
 
+  // === МОНСТРЫ ===
   for(const m of monsters) {
     if(!m.alive) continue;
+
+    // Hit flash
     if(m.hitFlash > 0 && !m.immortal) {
       m.hitFlash -= dt;
       m.mesh.traverse(c => { if(c.isMesh && c.material && c.userData.origColor !== undefined) c.material.color.setHex(0xffffff); });
@@ -2326,8 +2333,15 @@ function update(dt) {
     const dist = dir.length();
     if(dist > 0.001) dir.normalize();
 
+    // Обнаружение
     if(!m.hasSeenPlayer && dist < 10 && !m.immortal) {
-      m.hasSeenPlayer = true; m.alertState = 'alert'; m.alertTimer = 0.4; soundAlert();
+      // + проверка видимости
+      if(hasLineOfSight(m.mesh.position.x, m.mesh.position.z, player.pos.x, player.pos.z)) {
+        m.hasSeenPlayer = true;
+        m.alertState = 'alert';
+        m.alertTimer = 0.4;
+        soundAlert();
+      }
     }
     if(m.alertState === 'alert') {
       m.alertTimer -= dt;
@@ -2347,18 +2361,23 @@ function update(dt) {
           const dx = dir.x * m.speed * speedMult * dt;
           const dz = dir.z * m.speed * speedMult * dt;
           const nextX = m.mesh.position.x + dx, nextZ = m.mesh.position.z + dz;
-          const { gx: ngx, gz: ngz } = worldToGrid(nextX, nextZ);
-          const nextIsLow = (ngz >= 0 && ngz < MAP_H && ngx >= 0 && ngx < MAP_W && MAP[ngz][ngx] === 'L');
+          const g = worldToGrid(nextX, nextZ);
+          const nextIsLow = (g.gz >= 0 && g.gz < MAP_H && g.gx >= 0 && g.gx < MAP_W && MAP[g.gz][g.gx] === 'L');
           const nextIsWall = isWallAt(nextX, nextZ, nextIsLow ? true : false);
           if(!nextIsWall) { m.mesh.position.x = nextX; m.mesh.position.z = nextZ; }
           m.walkPhase += dt * 4;
           m.mesh.position.y = Math.abs(Math.sin(m.walkPhase)) * 0.1;
         } else {
-          m.attackTimer -= dt;
-          if(m.attackTimer <= 0) {
+          // Атака — только если видит игрока
+          if(hasLineOfSight(m.mesh.position.x, m.mesh.position.z, player.pos.x, player.pos.z)) {
+            m.attackTimer -= dt;
+            if(m.attackTimer <= 0) {
+              m.attackTimer = 1.0;
+              flashDamage(); soundHit(); damageSoul();
+              if(gameOver) return;
+            }
+          } else {
             m.attackTimer = 1.0;
-            flashDamage(); soundHit(); damageSoul();
-            if(gameOver) return;
           }
         }
         m.mesh.rotation.y = Math.atan2(dir.x, dir.z);
@@ -2372,11 +2391,17 @@ function update(dt) {
         m.walkPhase += dt * 6;
         m.mesh.position.y = Math.abs(Math.sin(m.walkPhase)) * (m.isBoss ? 0.15 : 0.08);
       } else {
-        m.attackTimer -= dt;
-        if(m.attackTimer <= 0) {
-          m.attackTimer = type.attackCooldown;
-          flashDamage(); soundHit(); damageSoul();
-          if(gameOver) return;
+        // === ФИКС: атакуют только через прямую видимость ===
+        if(hasLineOfSight(m.mesh.position.x, m.mesh.position.z, player.pos.x, player.pos.z)) {
+          m.attackTimer -= dt;
+          if(m.attackTimer <= 0) {
+            m.attackTimer = type.attackCooldown;
+            flashDamage(); soundHit(); damageSoul();
+            if(gameOver) return;
+          }
+        } else {
+          // Сбрасываем таймер, если игрок за стеной
+          m.attackTimer = Math.max(m.attackTimer, 0.5);
         }
       }
       m.mesh.rotation.y = Math.atan2(dir.x, dir.z);
@@ -2388,6 +2413,7 @@ function update(dt) {
     if(!monsters[i].alive && monsters[i].mesh.parent === null) monsters.splice(i, 1);
   }
 
+  // Онлайн
   if(conn && onlineActive) {
     onlineUpdateTimer -= dt;
     if(onlineUpdateTimer <= 0) {
@@ -2417,7 +2443,11 @@ function loop() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  update(dt);
+  try {
+    update(dt);
+  } catch(e) {
+    console.error('Update error:', e);
+  }
   renderer.setRenderTarget(rt);
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
